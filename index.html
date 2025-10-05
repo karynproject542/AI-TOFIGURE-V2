@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>AI Figure Generator — Azzoriginal</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{--gold:#FFD700;--bg:#070707;--card:#0d0d0d;--muted:#bfa74a}
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#000,#0b0b0b);color:var(--gold);font-family:'Poppins',system-ui,Segoe UI,Roboto,Arial;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+  .card{width:100%;max-width:900px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);border:1px solid rgba(255,215,0,0.06);padding:28px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,0.6)}
+  h1{margin:0;font-size:22px}
+  p.lead{margin:6px 0 18px;color:var(--muted)}
+  .grid{display:flex;gap:18px;flex-wrap:wrap}
+  .col{flex:1;min-width:260px}
+  .upload{background:var(--card);padding:18px;border-radius:12px;border:1px dashed rgba(255,215,0,0.06);text-align:center}
+  input[type=file]{display:none}
+  label.btn{display:inline-block;padding:10px 16px;border-radius:10px;background:var(--gold);color:#000;font-weight:600;cursor:pointer}
+  button.action{margin-top:12px;padding:10px 14px;border-radius:10px;border:none;background:var(--gold);color:#000;font-weight:700;cursor:pointer}
+  .muted{color:var(--muted);font-size:13px;margin-top:8px}
+  .preview{margin-top:12px;max-width:100%;border-radius:10px;border:1px solid rgba(255,215,0,0.06)}
+  .result-area{display:flex;align-items:center;justify-content:center;min-height:260px;background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent);border-radius:12px;padding:12px;border:1px solid rgba(255,215,0,0.03)}
+  .result-img{max-width:100%;border-radius:12px}
+  .status{margin-top:12px;color:#cfc27a;font-size:14px}
+  .controls{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px}
+  a.download{padding:8px 12px;border-radius:8px;background:rgba(255,215,0,0.12);color:var(--gold);text-decoration:none}
+  footer{margin-top:18px;color:#9f8f3a;font-size:13px;text-align:center}
+  @media(max-width:700px){ .grid{flex-direction:column} }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>AI Figure Generator</h1>
+    <p class="lead">Azzoriginal — ubah gambar jadi figure bergaya AI (ToFigure v2). Upload gambar JPG/PNG lalu klik Proses.</p>
+
+    <div class="grid">
+      <div class="col upload">
+        <form id="form" onsubmit="return false;">
+          <input id="file" type="file" accept="image/*" />
+          <label for="file" class="btn">Pilih Gambar</label>
+        </form>
+        <div class="muted" id="muted">Format: JPG/PNG. Max ~10MB recommended.</div>
+        <div class="controls" id="controls" style="display:none">
+          <button class="action" id="startBtn">Proses HD</button>
+          <a id="downloadBtn" class="download" href="#" download style="display:none">Download</a>
+        </div>
+        <div class="status" id="status">Belum ada file.</div>
+        <img id="preview" class="preview" style="display:none"/>
+      </div>
+
+      <div class="col">
+        <div class="result-area" id="resultArea">
+          <div style="color:var(--muted)">Hasil akan muncul di sini setelah proses selesai</div>
+        </div>
+      </div>
+    </div>
+
+    <footer>Powered by Azzoriginal • API: api.nekolabs.my.id</footer>
+  </div>
+
+<script>
+const fileInput = document.getElementById('file');
+const status = document.getElementById('status');
+const preview = document.getElementById('preview');
+const controls = document.getElementById('controls');
+const startBtn = document.getElementById('startBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const resultArea = document.getElementById('resultArea');
+
+let selectedFile = null;
+
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files[0];
+  if (!f) return;
+  selectedFile = f;
+  preview.src = URL.createObjectURL(f);
+  preview.style.display = 'block';
+  status.innerText = f.name + ' • ' + Math.round(f.size/1024) + ' KB';
+  controls.style.display = 'flex';
+  downloadBtn.style.display = 'none';
+  resultArea.innerHTML = '<div style="color:var(--muted)">Hasil akan muncul di sini setelah proses selesai</div>';
+});
+
+startBtn.addEventListener('click', async () => {
+  if (!selectedFile) return alert('Pilih gambar dulu!');
+  // simple size guard
+  if (selectedFile.size > 12 * 1024 * 1024) {
+    if (!confirm('File besar (>12MB). Lanjutkan?')) return;
+  }
+  status.innerText = '⏳ Mengunggah dan memproses...';
+  startBtn.disabled = true;
+
+  try {
+    // upload to Catbox via our serverless API (to avoid CORS)
+    const uploadForm = new FormData();
+    uploadForm.append('file', selectedFile);
+
+    // we post file directly to /api/upload which returns a JSON { url }
+    const uploadRes = await fetch('/api/upload', { method: 'POST', body: uploadForm });
+    if (!uploadRes.ok) throw new Error('Gagal upload file ke server.');
+    const uploadJson = await uploadRes.json();
+    if (!uploadJson?.url) throw new Error('Upload server tidak mengembalikan URL.');
+
+    // call tofigure API via serverless (avoid exposing direct API calls)
+    const procRes = await fetch('/api/tofigure', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify({ imageUrl: uploadJson.url })
+    });
+    if (!procRes.ok) throw new Error('Proses tofigure gagal.');
+    const procJson = await procRes.json();
+    if (!procJson?.status || !procJson?.result) throw new Error('Server tofigure gagal.');
+
+    // display result
+    resultArea.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = procJson.result;
+    img.className = 'result-img';
+    resultArea.appendChild(img);
+
+    downloadBtn.href = procJson.result;
+    downloadBtn.style.display = 'inline-block';
+    status.innerText = '✅ Selesai!';
+  } catch (err) {
+    console.error(err);
+    status.innerText = '❌ Error: ' + (err.message || err);
+    resultArea.innerHTML = '<div style="color:#ff9a9a">Proses gagal. Coba lagi.</div>';
+  } finally {
+    startBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
